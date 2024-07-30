@@ -69,9 +69,9 @@
  * available memory in your computer
  */
 /* Maximum number of records read in the CSV file */
-#define MAX_NO_RECORDS 20000000
+#define MAX_NO_RECORDS 200000
 /* Maximum number of trips */
-#define MAX_SHIPS 6500
+#define MAX_SHIPS 10
 /* Number of instants in a batch for printing a marker */
 #define NO_RECORDS_BATCH 100000
 /* Initial number of allocated instants for an input trip and SOG */
@@ -103,6 +103,24 @@ typedef struct
   TSequence *trip;        /* Sequence accumulating the trip observations */
   TSequence *SOG;         /* Sequence accumulating the SOG observations */
 } trip_record;
+
+
+
+void make_queries(trip_record* trips, int no_ships){
+  /* Temporal* trip_i,* trip_j; */
+  /* trip_i = malloc(sizeof(Temporal)); */
+  /* trip_j = malloc(sizeof(Temporal)); */
+  for(int i = 0; i< no_ships; ++i){
+    for (int j = 0; j< no_ships; ++j){
+      /* memcpy(&trips[i], &trip_i, sizeof(Temporal)); */
+      /* memcpy(&trips[j], &trip_j, sizeof(Temporal)); */
+      /* printf("FUUUUUUUUCK"); */
+      double distance = nad_tpoint_tpoint((Temporal *) trips[i].trip, (Temporal *) trips[j].trip);
+      printf("\n i:%d j:%d distance:%f",i,j, distance);
+    }
+  }
+}
+
 
 /* Main program */
 int main(void)
@@ -245,6 +263,7 @@ int main(void)
 
     /* Find the place to store the new instant */
     j = -1;
+    // TODO: this should me a map
     for (i = 0; i < no_ships; i++)
     {
       if (trips[i].MMSI == rec.MMSI)
@@ -408,6 +427,10 @@ int main(void)
   t = clock() - t;
   double time_taken = ((double) t) / CLOCKS_PER_SEC;
   printf("The program took %f seconds to execute\n", time_taken);
+
+  /* Call a function to query on trips */
+  make_queries(trips, no_ships);
+
 
   /* State that the program executed successfully */
   exit_value = 0;
