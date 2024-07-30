@@ -69,9 +69,9 @@
  * available memory in your computer
  */
 /* Maximum number of records read in the CSV file */
-#define MAX_NO_RECORDS 200000
+#define MAX_NO_RECORDS 2000000
 /* Maximum number of trips */
-#define MAX_SHIPS 10
+#define MAX_SHIPS 100000
 /* Number of instants in a batch for printing a marker */
 #define NO_RECORDS_BATCH 100000
 /* Initial number of allocated instants for an input trip and SOG */
@@ -107,20 +107,26 @@ typedef struct
 
 
 void make_queries(trip_record* trips, int no_ships){
-  /* Temporal* trip_i,* trip_j; */
-  /* trip_i = malloc(sizeof(Temporal)); */
-  /* trip_j = malloc(sizeof(Temporal)); */
   for(int i = 0; i< no_ships; ++i){
     for (int j = 0; j< no_ships; ++j){
-      /* memcpy(&trips[i], &trip_i, sizeof(Temporal)); */
-      /* memcpy(&trips[j], &trip_j, sizeof(Temporal)); */
-      /* printf("FUUUUUUUUCK"); */
       double distance = nad_tpoint_tpoint((Temporal *) trips[i].trip, (Temporal *) trips[j].trip);
       printf("\n i:%d j:%d distance:%f",i,j, distance);
     }
   }
 }
 
+void no_ships_close_to_ship(trip_record* trips, int no_ships, int ship_to_search,float min_distance){
+  int cnt = 0;
+  for (int i = 0; i < no_ships; ++i){
+    if (trips[i].trip == NULL){
+      continue;
+    }
+    if(min_distance > nad_tpoint_tpoint((Temporal *) trips[i].trip, (Temporal *) trips[ship_to_search].trip)){
+      cnt++;
+    }
+  }
+  printf("\nTotal number of ships close to %d: %d\n", ship_to_search, cnt);
+}
 
 /* Main program */
 int main(void)
@@ -397,27 +403,27 @@ int main(void)
   fclose(file);
 
   /* Construct the trips */
-  printf("\n-----------------------------------------------------------------------------\n");
-  printf("|   MMSI    |   #Rec  | #TrInst |  #SInst |     Distance    |     Speed     |\n");
-  printf("-----------------------------------------------------------------------------\n");
-  for (i = 0; i < no_ships; i++)
-  {
-    printf("| %.9ld |   %5d |   %5d |   %5d |", trips[i].MMSI,
-      trips[i].no_records, trips[i].no_trip_instants, trips[i].no_SOG_instants);
-    if (trips[i].trip != NULL)
-    {
-      printf(" %15.6lf |", tpointseq_length(trips[i].trip));
-    }
-    else
-      printf("        ---      |");
+  /* printf("\n-----------------------------------------------------------------------------\n"); */
+  /* printf("|   MMSI    |   #Rec  | #TrInst |  #SInst |     Distance    |     Speed     |\n"); */
+  /* printf("-----------------------------------------------------------------------------\n"); */
+  /* for (i = 0; i < no_ships; i++) */
+  /* { */
+  /*   printf("| %.9ld |   %5d |   %5d |   %5d |", trips[i].MMSI, */
+  /*     trips[i].no_records, trips[i].no_trip_instants, trips[i].no_SOG_instants); */
+  /*   if (trips[i].trip != NULL) */
+  /*   { */
+  /*     printf(" %15.6lf |", tpointseq_length(trips[i].trip)); */
+  /*   } */
+  /*   else */
+  /*     printf("        ---      |"); */
 
-    if (trips[i].SOG != NULL)
-    {
-      printf(" %13.6lf |\n", tnumberseq_twavg(trips[i].SOG));
-    }
-    else
-      printf("       ---     |\n");
-  }
+  /*   if (trips[i].SOG != NULL) */
+  /*   { */
+  /*     printf(" %13.6lf |\n", tnumberseq_twavg(trips[i].SOG)); */
+  /*   } */
+  /*   else */
+  /*     printf("       ---     |\n"); */
+  /* } */
   printf("-----------------------------------------------------------------------------\n");
   printf("\n%d records read.\n%d erroneous records ignored.\n", no_records,
     no_err_records);
@@ -429,8 +435,11 @@ int main(void)
   printf("The program took %f seconds to execute\n", time_taken);
 
   /* Call a function to query on trips */
-  make_queries(trips, no_ships);
-
+  /* make_queries(trips, no_ships); */
+  t = clock();
+  no_ships_close_to_ship(trips, no_ships,1, 100000.0);
+  t = clock()-t;
+  printf("\nTo look for closest ship it took: %f seconds\n", ((double) t) / CLOCKS_PER_SEC);
 
   /* State that the program executed successfully */
   exit_value = 0;
