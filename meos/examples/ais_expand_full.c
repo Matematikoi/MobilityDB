@@ -62,6 +62,7 @@
 #include <meos.h>
 /* The expandable functions are in the internal MEOS API */
 #include <meos_internal.h>
+#include "rtree/rtree.h"
 
 /*
  * IMPORTANT !!!
@@ -71,7 +72,7 @@
 /* Maximum number of records read in the CSV file */
 #define MAX_NO_RECORDS 2000000
 /* Maximum number of trips */
-#define MAX_SHIPS 100000
+#define MAX_SHIPS 20
 /* Number of instants in a batch for printing a marker */
 #define NO_RECORDS_BATCH 100000
 /* Initial number of allocated instants for an input trip and SOG */
@@ -104,8 +105,6 @@ typedef struct
   TSequence *SOG;         /* Sequence accumulating the SOG observations */
 } trip_record;
 
-
-
 void make_queries(trip_record* trips, int no_ships){
   for(int i = 0; i< no_ships; ++i){
     for (int j = 0; j< no_ships; ++j){
@@ -127,6 +126,44 @@ void no_ships_close_to_ship(trip_record* trips, int no_ships, int ship_to_search
   }
   printf("\nTotal number of ships close to %d: %d\n", ship_to_search, cnt);
 }
+
+
+struct rtree* rtree_create ( STBox** boxes, long int* ids, int no_boxes){
+  struct rtree *tr = rtree_new();
+  for (int i = 0; i<no_boxes; ++i){
+    rtree_insert(
+                tr,
+                (double[3]){boxes[i]->xmin, boxes[i]->ymin, boxes[i]->zmin},
+                (double[3]){boxes[i]->xmax, boxes[i]->ymax, boxes[i]->zmax},
+                &ids[i]
+                 );
+  }
+  return tr;
+}
+
+struct rtree* create_index(trip_record* trip, int no_ships){
+  STBox** boxes = malloc(sizeof(STBox*) * no_ships);
+  STBox *box = malloc(sizeof(STBox));
+  long int* ids = malloc(sizeof ( long int ) * no_ships);
+  int no_boxes=0;
+  for (int i = 0; i<no_ships; i++){
+    /* printf("\ncreating index for %d", i); */
+    /*   printf("\n%f %f %f\n", box->xmin, box->ymin, box->zmin); */
+      ++no_boxes;
+      tspatialseq_set_stbox(trip[i].trip, box);
+      boxes[i] = box;
+      ids[i] = trip[i].MMSI;
+    /* printf(" why?\n"); */
+  /*   for(int j =0; j< trip[i]->no_records; ++j){ */
+  /* } */
+  }
+  return rtree_create(boxes, ids, no_boxes);
+}
+
+
+/* struct rtree* query_index(trip_record* trip, int no_ships, int ship_to_search, float min_distance, const struct rtree*){ */
+
+/* } */
 
 /* Main program */
 int main(void)
@@ -428,6 +465,12 @@ int main(void)
   printf("\n%d records read.\n%d erroneous records ignored.\n", no_records,
     no_err_records);
   printf("%d trips read.\n", no_ships);
+  const int selected_ship =1;
+  const float max_distance = 10000.0;
+  for (int i =0; i<no_ships; ++i){
+    float distance = nad_tpoint_tpoint((Temporal *) trips[i].trip, (Temporal *) trips[selected_ship].trip);
+    printf("\n %d) Distance to %d: %f",distance< max_distance,i, distance);
+  }
 
   /* Calculate the elapsed time */
   t = clock() - t;
@@ -437,9 +480,18 @@ int main(void)
   /* Call a function to query on trips */
   /* make_queries(trips, no_ships); */
   t = clock();
-  no_ships_close_to_ship(trips, no_ships,1, 100000.0);
+  no_ships_close_to_ship(trips, no_ships,selected_ship, max_distance);
   t = clock()-t;
   printf("\nTo look for closest ship it took: %f seconds\n", ((double) t) / CLOCKS_PER_SEC);
+
+
+  t = clock();
+  create_index(trips, no_ships);
+  t = clock()-t;
+  printf("\nTo create the index it took: %f seconds\n", ((double) t) / CLOCKS_PER_SEC);
+
+
+
 
   /* State that the program executed successfully */
   exit_value = 0;
