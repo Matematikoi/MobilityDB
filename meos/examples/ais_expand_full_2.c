@@ -89,13 +89,6 @@ int main(void)
   fscanf(file, "%1023[^\n]\n", line_buffer);
   printf("Processing records\n");
   printf("  one '*' marker every %d records\n", NO_RECORDS_BATCH);
-  /* Uncomment the next lines to display a marker each time and incomplete
-   * record or an erroneous field has been read */
-  // printf("  one '-' marker every incomplete or erroneous records\n");
-  // printf("  one 'T' marker every record with duplicate timestamp and position\n");
-  // printf("  one 'S' marker every record with duplicate timestamp and SGO\n");
-
-  /* Continue reading the file */
   do
   {
     fscanf(file, "%1023[^\n]\n", line_buffer);
@@ -178,10 +171,6 @@ int main(void)
 
     if (! has_t || ! has_mmsi || ! ( ( has_lat && has_long ) || has_sog) )
     {
-      /* Uncomment the next lines to display a marker each time
-       * an incomplete record or an erroneous field has been read */
-      // printf("-");
-      // fflush(stdout);
       no_err_records++;
       continue;
     }
@@ -254,14 +243,6 @@ int main(void)
       {
         new_seq = (TSequence *) tsequence_append_tinstant(trips[j].trip, inst,
           0.0, NULL, true);
-        /* Uncomment the next lines to display debug messages showing how the
-         * the data structures are expanded */
-        // if (trips[j].trip && trips[j].trip != new_seq)
-        // {
-          // printf("MMSI: %ld ", trips[j].MMSI);
-          // printf("Trip %d -> %d ", new_seq->maxcount / 2, new_seq->maxcount);
-          // fflush(stdout);
-        // }
         trips[j].trip = new_seq;
         trips[j].no_trip_instants++;
       }
@@ -273,12 +254,6 @@ int main(void)
       /* Ensure there is still space for storing the temporal float instant */
       if (trips[j].SOG == NULL)
       {
-        /* Uncomment the next lines to display debug messages showing how
-         * the data structures are expanded */
-        // printf("MMSI: %ld ", trips[j].MMSI);
-        // printf("Speed %d -> %d ", trips[j].no_SOG_instants,
-          // trips[j].no_SOG_instants * 2);
-        // fflush(stdout);
         trips[j].SOG = tsequence_make_exp((const TInstant **) &inst, 1,
           INITIAL_INSTANTS, true,  true, LINEAR, false);
         if (trips[j].SOG == NULL)
@@ -294,23 +269,11 @@ int main(void)
       if (last->t == inst->t)
       {
         free(inst);
-        // Uncomment the next lines to display a marker each time a SOG
-        // observation has the same timestamp as the previous one
-        // printf("S");
-        // fflush(stdout);
       }
       else
       {
         new_seq = (TSequence *) tsequence_append_tinstant(trips[j].SOG, inst,
           0.0, NULL, true);
-        /* Uncomment the next lines to display debug messages showing how the
-         * the data structures are expanded */
-        // if (trips[j].SOG && trips[j].SOG != new_seq)
-        // {
-          // printf("MMSI: %ld ", trips[j].MMSI);
-          // printf("SOG %d -> %d ", new_seq->maxcount / 2, new_seq->maxcount);
-          // fflush(stdout);
-        // }
         trips[j].SOG = new_seq;
         trips[j].no_SOG_instants++;
       }
@@ -321,27 +284,6 @@ int main(void)
   fclose(file);
 
   /* Construct the trips */
-  printf("\n-----------------------------------------------------------------------------\n");
-  printf("|   MMSI    |   #Rec  | #TrInst |  #SInst |     Distance    |     Speed     |\n");
-  printf("-----------------------------------------------------------------------------\n");
-  for (i = 0; i < no_ships; i++)
-  {
-    printf("| %.9ld |   %5d |   %5d |   %5d |", trips[i].MMSI,
-      trips[i].no_records, trips[i].no_trip_instants, trips[i].no_SOG_instants);
-    if (trips[i].trip != NULL)
-    {
-      printf(" %15.6lf |", tpointseq_length(trips[i].trip));
-    }
-    else
-      printf("        ---      |");
-
-    if (trips[i].SOG != NULL)
-    {
-      printf(" %13.6lf |\n", tnumberseq_twavg(trips[i].SOG));
-    }
-    else
-      printf("       ---     |\n");
-  }
   printf("-----------------------------------------------------------------------------\n");
   printf("\n%d records read.\n%d erroneous records ignored.\n", no_records,
     no_err_records);
@@ -350,7 +292,7 @@ int main(void)
   /* Calculate the elapsed time */
   t = clock() - t;
   double time_taken = ((double) t) / CLOCKS_PER_SEC;
-  printf("The program took %f seconds to execute\n", time_taken);
+  printf("The program took %f seconds to read the file\n", time_taken);
 
   /* State that the program executed successfully */
   exit_value = 0;
