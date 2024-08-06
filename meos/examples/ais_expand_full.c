@@ -70,9 +70,9 @@
  * available memory in your computer
  */
 /* Maximum number of records read in the CSV file */
-#define MAX_NO_RECORDS 200000
+#define MAX_NO_RECORDS 2000000000
 /* Maximum number of trips */
-#define MAX_SHIPS 2000
+#define MAX_SHIPS 100000
 /* Number of instants in a batch for printing a marker */
 #define NO_RECORDS_BATCH 100000
 /* Initial number of allocated instants for an input trip and SOG */
@@ -85,6 +85,11 @@
 #define MAX_LENGTH_TIMESTAMP 32
 /* Maximum length in characters of all other strings in the input data */
 #define MAX_LENGTH_STRING 64
+
+bool index_distances[MAX_SHIPS];
+bool real_distances[MAX_SHIPS];
+
+
 
 typedef struct
 {
@@ -106,14 +111,23 @@ typedef struct
 } trip_record;
 
 
-void no_ships_close_to_ship(trip_record* trips, int no_ships, int ship_to_search,float min_distance){
+void no_ships_close_to_ship(trip_record* trips, int no_ships, int ship_to_search,float max_distance, bool distances[]){
   int cnt = 0;
   for (int i = 0; i < no_ships; ++i){
     if (trips[i].trip == NULL){
       continue;
     }
-    if(min_distance > nad_tpoint_tpoint((Temporal *) trips[i].trip, (Temporal *) trips[ship_to_search].trip)){
+    double distance = nad_tpoint_tpoint(
+      (Temporal *)tgeogpoint_to_tgeompoint(tpoint_transform((Temporal *)trips[i].trip, 3034)),
+      (Temporal *)tgeogpoint_to_tgeompoint(tpoint_transform((Temporal *)trips[ship_to_search].trip, 3034)));
+    /* double distance = nad_tpoint_tpoint( */
+    /*   trips[i].trip, */
+    /*   trips[ship_to_search].trip); */
+    /* printf("\nitem %d distance %f", i, distance); */
+
+    if(max_distance > distance ){
       cnt++;
+      distances[i] = true;
     }
   }
   printf("\nTotal number of ships close to %d: %d\n", ship_to_search, cnt);
@@ -145,33 +159,42 @@ struct rtree* create_index(trip_record* trip, int no_ships, STBox ** boxes){
       continue;
     }
     tspatialseq_set_stbox(trip[i].trip, box);
-    STBox *box_2 = stbox_transform(box, 4087);
+    STBox *box_2 = stbox_transform(box, 25832);
+    /* printf("\nSTBOX %d %f %f %s, %s",i , box_2->xmin, box_2->ymin, pg_timestamp_out(box_2->period.lower), pg_timestamp_out(box_2->period.upper)); */
     boxes[i] = box_2;
     ids[i] = i;
   }
-  printf("\nFUUUUCK\n");
   return rtree_create(boxes, ids, no_ships);
 }
 
 bool ship_iter(const double* min, const double *max, const void* item, void *udata){
-  /* const long int * shipId = item; */
-  /* printf("\nFound ship %ld", *shipId); */
+  const int * shipId = item;
+  /* printf("\nFound ship %d", *shipId); */
+  index_distances[*shipId] = true;
   int *foo = udata;
   ++*foo;
   return true;
 }
 
-long int* query_index(int ship_to_search, float min_distance, const struct rtree* tr, STBox ** boxes){
+long int* query_index(int ship_to_search, float max_distance, const struct rtree* tr, STBox ** boxes, trip_record* trips, int no_ships){
   int i = ship_to_search;
   int found = 0;
   rtree_search(
                tr,
-               (double[3]){boxes[i]->xmin-min_distance, boxes[i]->ymin-min_distance, boxes[i]->zmin},
-               (double[3]){boxes[i]->xmax+min_distance, boxes[i]->ymax+min_distance, boxes[i]->zmax},
+               (double[3]){boxes[i]->xmin-max_distance, boxes[i]->ymin-max_distance, boxes[i]->zmin},
+               (double[3]){boxes[i]->xmax+max_distance, boxes[i]->ymax+max_distance, boxes[i]->zmax},
                ship_iter,
                (void*) &found
                );
   printf("\n Found in the index %d elements", found);
+  for (int i=0 ; i< no_ships; ++i){
+    if (index_distances[i]){
+      double distance = nad_tpoint_tpoint(
+        (Temporal *)tgeogpoint_to_tgeompoint(tpoint_transform((Temporal *)trips[i].trip, 3034)),
+        (Temporal *)tgeogpoint_to_tgeompoint(tpoint_transform((Temporal *)trips[ship_to_search].trip, 3034)));
+      index_distances[i] = distance < max_distance;
+    }
+  }
   return NULL;
 }
 
@@ -183,6 +206,7 @@ int main(void)
   char point_buffer[MAX_LENGTH_POINT];
   /* Allocate space to build the trips */
   trip_record trips[MAX_SHIPS] = {0};
+  /* For the confusion matrix */
   /* Record storing one line read from of the CSV file*/
   AIS_record rec;
   /* Number of records read */
@@ -449,38 +473,16 @@ int main(void)
 
   /* Close the file */
   fclose(file);
-
-  /* Construct the trips */
-  /* printf("\n-----------------------------------------------------------------------------\n"); */
-  /* printf("|   MMSI    |   #Rec  | #TrInst |  #SInst |     Distance    |     Speed     |\n"); */
-  /* printf("-----------------------------------------------------------------------------\n"); */
-  /* for (i = 0; i < no_ships; i++) */
-  /* { */
-  /*   printf("| %.9ld |   %5d |   %5d |   %5d |", trips[i].MMSI, */
-  /*     trips[i].no_records, trips[i].no_trip_instants, trips[i].no_SOG_instants); */
-  /*   if (trips[i].trip != NULL) */
-  /*   { */
-  /*     printf(" %15.6lf |", tpointseq_length(trips[i].trip)); */
-  /*   } */
-  /*   else */
-  /*     printf("        ---      |"); */
-
-  /*   if (trips[i].SOG != NULL) */
-  /*   { */
-  /*     printf(" %13.6lf |\n", tnumberseq_twavg(trips[i].SOG)); */
-  /*   } */
-  /*   else */
-  /*     printf("       ---     |\n"); */
-  /* } */
   printf("-----------------------------------------------------------------------------\n");
   printf("\n%d records read.\n%d erroneous records ignored.\n", no_records,
     no_err_records);
   printf("%d trips read.\n", no_ships);
   const int selected_ship =1;
-  const float max_distance = 100000.0;
+  const float max_distance = 1000.0;
   /* for (int i =0; i<no_ships; ++i){ */
+  /*   if(trips[i].trip == NULL)continue; */
   /*   float distance = nad_tpoint_tpoint((Temporal *) trips[i].trip, (Temporal *) trips[selected_ship].trip); */
-  /*   printf("\n %d) Distance to %ld: %f",distance< max_distance,trips[i].MMSI, distance); */
+  /*   printf("\n %d - %d) Distance to %ld: %f",distance< max_distance, i,trips[i].MMSI, distance); */
   /* } */
 
   /* Calculate the elapsed time */
@@ -491,27 +493,76 @@ int main(void)
   /* Call a function to query on trips */
   /* make_queries(trips, no_ships); */
   t = clock();
-  no_ships_close_to_ship(trips, no_ships,selected_ship, max_distance);
+  no_ships_close_to_ship(trips, no_ships,selected_ship, max_distance, real_distances);
   t = clock()-t;
   printf("\nTo look for closest ship it took: %f seconds\n", ((double) t) / CLOCKS_PER_SEC);
 
 
-  t = clock();
   STBox** boxes = malloc(sizeof(STBox *) * no_ships );
+  t = clock();
   struct rtree *tree = create_index(trips, no_ships, boxes);
   t = clock()-t;
   printf("\nTo create the index it took: %f seconds\n", ((double) t) / CLOCKS_PER_SEC);
 
 
   t = clock();
-  query_index (selected_ship, max_distance *1.8 , tree, boxes);
+  query_index (selected_ship, max_distance * 1.5  , tree, boxes, trips, no_ships);
   t = clock()-t;
   printf("\nTo lookup in the index it took: %f seconds\n", ((double) t) / CLOCKS_PER_SEC);
 
 
+  /* CONFUSION MATRIX! */
+  int tp = 0, tn =0, fp=0,fn=0;
+  for (int i = 0 ; i< no_ships; ++i){
+    if(trips[i].trip == NULL){
+      continue;
+    }
+    if (real_distances[i] == true && index_distances[i] == true){
+      /* printf("\n True Positives %d", i); */
+      ++tp;
+    }
+    if(real_distances[i] == true && index_distances[i] == false){
+      /* printf("\n False negative %d", i); */
+      fn++;
+    }
+    if(real_distances[i] == false && index_distances[i] == true){
+      printf("\n False positive %d", i);
+      fp++;
+    }
+    if(real_distances[i] == false && index_distances[i] == false){
+      tn++;
+    }
+  }
+  printf("\nCONFUSION MATRIX\n\t|pos\t|neg\t|\npos\t|%d\t|%d\t|\nneg\t|%d\t|%d\t|\n",tp,fp,fn,tn);
+
+  /* int erroneous[] = {selected_ship,1640, 2235, 3346,4094,4353,4680,5441}; */
+  /* printf("MAX DISTANCE: %f", max_distance); */
+  /* for (int i = 0; i< 8; ++i){ */
+  /*   if (!trips[erroneous[i]].trip) continue; */
+  /*   double distance = nad_tpoint_tpoint( */
+  /*     (Temporal *)tgeogpoint_to_tgeompoint(tpoint_transform((Temporal *)trips[erroneous[i]].trip, 3034)), */
+  /*     (Temporal *)tgeogpoint_to_tgeompoint(tpoint_transform((Temporal *)trips[selected_ship].trip, 3034))); */
+  /*   printf("\n--%d--%ld-- distance: %f",erroneous[i],trips[erroneous[i]].MMSI, distance); */
+  /*   printf("\n STBox-- xmin: %f, xmax: %f, ymin: %f, ymax: %f", boxes[erroneous[i]]->xmin, boxes[erroneous[i]]->xmax, boxes[erroneous[i]]->ymin, boxes[erroneous[i]]->ymax); */
+  /* } */
+  /* printf("\n"); */
 
   /* State that the program executed successfully */
   exit_value = 0;
+  FILE *fptr;
+
+  // Open a file in append mode
+  fptr = fopen("./data/linestring_aisdk.csv", "w");
+    /* MAKE CSV  */
+  fprintf(fptr, "MMSI|ID|GEOM");
+  for (int i = 0 ; i<no_ships; ++i){
+    if (trips[i].trip == NULL) continue;
+    GSERIALIZED * foo = tpointseq_trajectory((TSequence *)tpoint_transform((Temporal*)trips[i].trip, 4326));
+    /* GSERIALIZED * foo = tpointseq_trajectory((TSequence *)tpoint_transform((Temporal*)trips[i].trip, 3034)); */
+    fprintf(fptr,"\n%ld|%d", trips[i].MMSI,i);
+    fprintf(fptr,"|%s",geo_as_ewkt(foo, 6)+10);
+  }
+  fprintf(fptr,"\n");
 
 /* Clean up */
 cleanup:
