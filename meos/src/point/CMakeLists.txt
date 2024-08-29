@@ -8,6 +8,7 @@ set(POINT_SRCS
   tpoint_boxops_meos.c
   tpoint_compops.c
   tpoint_distance.c
+  tpoint_gist.c
   tpoint_out.c
   tpoint_parser.c
   tpoint_posops_meos.c
