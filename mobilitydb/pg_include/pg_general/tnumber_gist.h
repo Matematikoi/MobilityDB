@@ -65,6 +65,23 @@ typedef struct
   double range;      /**< width of general MBR projection to the selected axis */
 } ConsiderSplitContext;
 
+
+/**
+ * Internal representation of a SplitVec output in GIST.
+ *
+ * We use int16 to keep it consistent with OffsetNumber which
+ * is an int16 but uses 1 based indexing.
+ */
+typedef struct{
+	int16 * spl_left;		/* array of entries that go left */
+	int			spl_nleft;		/* size of this array */
+	Datum		spl_ldatum;		/* Union of keys in spl_left */
+
+	int16 * spl_right;	/* array of entries that go right */
+	int			spl_nright;		/* size of the array */
+	Datum		spl_rdatum;		/* Union of keys in spl_right */
+} SplitVec;
+
 /*****************************************************************************/
 
 /* The following functions are also called by tpoint_gist.c */

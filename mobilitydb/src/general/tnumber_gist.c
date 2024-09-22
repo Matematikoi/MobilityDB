@@ -516,7 +516,7 @@ bbox_gist_fallback_split(GistEntryVector *entryvec, GIST_SPLITVEC *v,
 
   for (i = FirstOffsetNumber; i <= maxoff; i = OffsetNumberNext(i))
   {
-    void *box = DatumGetPointer(entryvec->vector[i].key);
+    void *box = DatumGetPointer(entryvec[i]);
     if (i < split_idx)
       PLACE_LEFT(box, i);
     else
@@ -528,42 +528,13 @@ bbox_gist_fallback_split(GistEntryVector *entryvec, GIST_SPLITVEC *v,
   return;
 }
 
-/**
- * @brief Double sorting split algorithm
- *
- * The algorithm finds split of boxes by considering splits along each axis.
- * Each entry is first projected as an interval on the X-axis, and different
- * ways to split the intervals into two groups are considered, trying to
- * minimize the overlap of the groups. Then the same is repeated for the
- * Y-axis, and the overall best split is chosen. The quality of a split is
- * determined by overlap along that axis and some other criteria (see
- * bbox_gist_consider_split).
- *
- * After that, all the entries are divided into three groups:
- *
- * 1. Entries which should be placed to the left group
- * 2. Entries which should be placed to the right group
- * 3. "Common entries" which can be placed to any of groups without affecting
- *    of overlap along selected axis.
- *
- * The common entries are distributed by minimizing penalty.
- *
- * For details see:
- * "A new double sorting-based node splitting algorithm for R-tree", A. Korotkov
- * http://syrcose.ispras.ru/2011/files/SYRCoSE2011_Proceedings.pdf#page=36
- */
-Datum
-bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
-  void (*bbox_adjust)(void *, void *), double (*bbox_penalty)(void *, void *))
-{
-  GistEntryVector *entryvec = (GistEntryVector *) PG_GETARG_POINTER(0);
-  GIST_SPLITVEC *v = (GIST_SPLITVEC *) PG_GETARG_POINTER(1);
-  OffsetNumber i, maxoff;
+void bbox_cleaned(meosType bboxtype, Datum entryvec, int n, SplitVec *v){
+  int i;
   ConsiderSplitContext context;
   void *box, *leftBox, *rightBox;
   SplitInterval *intervalsLower, *intervalsUpper;
   CommonEntry *common_entries;
-  int nentries, common_entries_count, dim;
+  int common_entries_count, dim;
   assert(bboxtype == T_TBOX || bboxtype == T_STBOX);
 
   int maxdims = bbox_max_dims(bboxtype);
@@ -571,20 +542,17 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
   bool hasz = false;
 
   memset(&context, 0, sizeof(ConsiderSplitContext));
-  maxoff = (OffsetNumber) (entryvec->n - 1);
-  nentries = context.entriesCount = maxoff - FirstOffsetNumber + 1;
 
   /* Allocate arrays for intervals along axes */
-  intervalsLower = palloc(sizeof(SplitInterval) * nentries);
-  intervalsUpper = palloc(sizeof(SplitInterval) * nentries);
+  intervalsLower = palloc(sizeof(SplitInterval) * n);
+  intervalsUpper = palloc(sizeof(SplitInterval) * n);
 
   /*
    * Calculate the overall minimum bounding box over all the entries.
    */
-  for (i = FirstOffsetNumber; i <= maxoff; i = OffsetNumberNext(i))
-  {
-    box = DatumGetPointer(entryvec->vector[i].key);
-    if (i == FirstOffsetNumber)
+  for (i = 0; i < n; i++){
+    box = DatumGetPointer(entryvec[i]);
+    if (i == 0)
       memcpy(&context.boundingBox, box, bbox_size);
     else
       bbox_adjust(&context.boundingBox, box);
@@ -593,7 +561,7 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
   /* Determine whether there is a Z dimension for spatiotemporal boxes */
   if (bboxtype == T_STBOX)
   {
-    box = DatumGetPointer(entryvec->vector[FirstOffsetNumber].key);
+    box = DatumGetPointer(entryvec[0]);
     hasz = MEOS_FLAGS_GET_Z(((STBox *) box)->flags);
   }
 
@@ -613,7 +581,7 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
     /* Project each entry as an interval on the selected axis */
     for (i = FirstOffsetNumber; i <= maxoff; i = OffsetNumberNext(i))
     {
-      box = DatumGetPointer(entryvec->vector[i].key);
+      box = DatumGetPointer(entryvec[i]);
       if (bboxtype == T_TBOX)
       {
         if (dim == 0)
@@ -662,10 +630,10 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
      * Make two arrays of intervals: one sorted by lower bound and another
      * sorted by upper bound.
      */
-    memcpy(intervalsUpper, intervalsLower, sizeof(SplitInterval) * nentries);
-    qsort(intervalsLower, (size_t) nentries, sizeof(SplitInterval),
+    memcpy(intervalsUpper, intervalsLower, sizeof(SplitInterval) * n);
+    qsort(intervalsLower, (size_t) n, sizeof(SplitInterval),
       (qsort_comparator) interval_cmp_lower);
-    qsort(intervalsUpper, (size_t) nentries, sizeof(SplitInterval),
+    qsort(intervalsUpper, (size_t) n, sizeof(SplitInterval),
       (qsort_comparator) interval_cmp_upper);
 
     /*----
@@ -711,13 +679,13 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
       /*
        * Find next lower bound of right group.
        */
-      while (i1 < nentries && FLOAT8_EQ(rightLower, intervalsLower[i1].lower))
+      while (i1 < n && FLOAT8_EQ(rightLower, intervalsLower[i1].lower))
       {
         if (FLOAT8_LT(leftUpper, intervalsLower[i1].upper))
           leftUpper = intervalsLower[i1].upper;
         i1++;
       }
-      if (i1 >= nentries)
+      if (i1 >= n)
         break;
       rightLower = intervalsLower[i1].lower;
 
@@ -725,7 +693,7 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
        * Find count of intervals which anyway should be placed to the
        * left group.
        */
-      while (i2 < nentries &&
+      while (i2 < n &&
            FLOAT8_LE(intervalsUpper[i2].upper, leftUpper))
         i2++;
 
@@ -740,8 +708,8 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
      * Iterate over upper bound of left group finding greatest possible
      * lower bound of right group.
      */
-    i1 = nentries - 1;
-    i2 = nentries - 1;
+    i1 = n - 1;
+    i2 = n - 1;
     rightLower = intervalsLower[i1].upper;
     leftUpper = intervalsUpper[i2].upper;
     while (true)
@@ -794,8 +762,8 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
    */
 
   /* Allocate vectors for results */
-  v->spl_left = palloc(sizeof(OffsetNumber) * nentries);
-  v->spl_right = palloc(sizeof(OffsetNumber) * nentries);
+  v->spl_left = palloc(sizeof(OffsetNumber) * n);
+  v->spl_right = palloc(sizeof(OffsetNumber) * n);
   v->spl_nleft = v->spl_nright = 0;
 
   /* Allocate bounding boxes of left and right groups */
@@ -807,20 +775,19 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
    * either group without affecting overlap along selected axis.
    */
   common_entries_count = 0;
-  common_entries = palloc(sizeof(CommonEntry) * nentries);
+  common_entries = palloc(sizeof(CommonEntry) * n);
 
   /*
    * Distribute entries which can be distributed unambiguously, and collect
    * common entries.
    */
-  for (i = FirstOffsetNumber; i <= maxoff; i = OffsetNumberNext(i))
-  {
+  for (i = FirstOffsetNumber; i < n; i++){
     double lower, upper;
 
     /*
      * Get upper and lower bounds along selected axis.
      */
-    box = DatumGetPointer(entryvec->vector[i].key);
+    box = DatumGetPointer(entryvec[i]);
     assert(bboxtype == T_TBOX || bboxtype == T_STBOX);
     if (bboxtype == T_TBOX)
     {
@@ -896,7 +863,7 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
      * Calculate minimum number of entries that must be placed in both
      * groups, to reach LIMIT_RATIO.
      */
-    int m = (int) ceil(LIMIT_RATIO * (double) nentries);
+    int m = (int) ceil(LIMIT_RATIO * (double) n);
     int j;
 
     /*
@@ -905,7 +872,7 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
      */
     for (j = 0; j < common_entries_count; j++)
     {
-      box = DatumGetPointer(entryvec->vector[common_entries[j].index].key);
+      box = DatumGetPointer(entryvec[common_entries[j].index]);
       common_entries[j].delta = fabs(bbox_penalty(leftBox, box) -
         bbox_penalty(rightBox, box));
     }
@@ -923,7 +890,7 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
     for (j = 0; j < common_entries_count; j++)
     {
       OffsetNumber idx = (OffsetNumber) (common_entries[j].index);
-      box = DatumGetPointer(entryvec->vector[idx].key);
+      box = DatumGetPointer(entryvec[idx]);
 
       /*
        * Check if we have to place this entry in either group to achieve
@@ -948,8 +915,102 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
   v->spl_rdatum = PointerGetDatum(rightBox);
 
   pfree(common_entries);
+}
 
-  PG_RETURN_POINTER(v);
+static SplitVec
+make_split_vec(int n, meosType bboxtype){
+  splitVec v;
+  size_t nbytes = (n) * sizeof(OffsetNumber);
+  v->spl_left = palloc(nbytes);
+  v->spl_right = palloc(nbytes);
+  v->spl_nleft = v->spl_nright = 0;
+
+  size_t bbox_size = bbox_get_size(bboxtype);
+  v->spl_ldatum = PointerGetDatum(palloc0(bbox_size));
+  v->spl_rdatum = PointerGetDatum(palloc0(bbox_size));
+  return v;
+}
+
+static GIST_SPLITVEC *
+make_gist_splitvec (const SplitVec * splitvec, GIST_SPLITVEC *v,int n){
+  splitVec v;
+  /** We add 1 since this is 1-based index */
+  size_t nbytes = (n+1) * sizeof(OffsetNumber);
+  v->spl_left = palloc(nbytes);
+  v->spl_right = palloc(nbytes);
+  for (int16 i = 0; i <= spl_nleft; i++){
+    v->spl_left[i+1] = splitvec->spl_left[i] + 1;
+  }
+
+  for (int16 i = 0; i <= spl_nleft; i++){
+    v->spl_right[i+1] = splitvec->spl_right[i] + 1;
+  }
+
+  v->spl_nleft = splitvec->spl_nleft;
+  v->spl_nright = splitvec->spl_rleft;
+
+  v->spl_ldatum = PointerGetDatum(splitvec->spl_ldatum);
+  v->spl_rdatum = PointerGetDatum(splitvec->spl_rdatum);
+
+  pfree(v->spl_ldatum);
+  pfree(v->spl_rdatum);
+  return v;
+}
+
+Datum
+make_array_from_gist_entry_vector(const GistEntryVector *entryvec){
+  Datum result = palloc(sizeof(Datum) * (entryvec->n -1));
+  for (int i = 0 ; i< n-1; i++){
+    result[i] = entryvec->vector[i+1].key;
+  }
+  return result;
+}
+
+/**
+ * @brief Double sorting split algorithm
+ *
+ * The algorithm finds split of boxes by considering splits along each axis.
+ * Each entry is first projected as an interval on the X-axis, and different
+ * ways to split the intervals into two groups are considered, trying to
+ * minimize the overlap of the groups. Then the same is repeated for the
+ * Y-axis, and the overall best split is chosen. The quality of a split is
+ * determined by overlap along that axis and some other criteria (see
+ * bbox_gist_consider_split).
+ *
+ * After that, all the entries are divided into three groups:
+ *
+ * 1. Entries which should be placed to the left group
+ * 2. Entries which should be placed to the right group
+ * 3. "Common entries" which can be placed to any of groups without affecting
+ *    of overlap along selected axis.
+ *
+ * The common entries are distributed by minimizing penalty.
+ *
+ * For details see:
+ * "A new double sorting-based node splitting algorithm for R-tree", A. Korotkov
+ * http://syrcose.ispras.ru/2011/files/SYRCoSE2011_Proceedings.pdf#page=36
+ */
+Datum
+bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
+  void (*bbox_adjust)(void *, void *), double (*bbox_penalty)(void *, void *))
+{
+  GistEntryVector *entryvec = (GistEntryVector *) PG_GETARG_POINTER(0);
+  GIST_SPLITVEC *v = (GIST_SPLITVEC *) PG_GETARG_POINTER(1);
+  SplitVec splitvec = make_split_vec(entryvec.n, bboxtype);
+  Datum entryarray = make_array_from_gist_entry_vector(entryvec);
+  /** Since there is an offset of 1, because that is the way postgres normally
+   * uses it, then you have to add 1 to the vec. You also have to substract 1
+   * from the size, since it had 1 added.
+  */
+  bbox_cleaned(
+    bbox_type, 
+    entryarray,
+    entryvec.n-1, 
+    &splitvec
+  );
+
+  pfree(entryarray)
+  PG_RETURN_POINTER(make_gist_splitvec(&splitvec, &v, int n));
 }
 
 PGDLLEXPORT Datum Tbox_gist_picksplit(PG_FUNCTION_ARGS);
