@@ -85,8 +85,7 @@ typedef struct{
 /*****************************************************************************/
 
 /* The following functions are also called by tpoint_gist.c */
-extern void bbox_gist_fallback_split(GistEntryVector *entryvec,
-  GIST_SPLITVEC *v, meosType bboxtype, void (*bbox_adjust)(void *, void *));
+extern void bbox_gist_fallback_split(meosType bboxtype, bboxunion** entryvec, int n, SplitVec *v, void (*bbox_adjust)(void *, void *));
 extern int interval_cmp_lower(const void *i1, const void *i2);
 extern int interval_cmp_upper(const void *i1, const void *i2);
 extern float non_negative(float val);

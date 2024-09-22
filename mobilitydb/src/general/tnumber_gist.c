@@ -495,16 +495,12 @@ bbox_gist_consider_split(ConsiderSplitContext *context, int dimNum,
  * other half on another page
  */
 void
-bbox_gist_fallback_split(GistEntryVector *entryvec, GIST_SPLITVEC *v,
-  meosType bboxtype, void (*bbox_adjust)(void *, void *))
-{
-  OffsetNumber i;
-  OffsetNumber maxoff = (OffsetNumber) (entryvec->n - 1);
+bbox_gist_fallback_split(meosType bboxtype, bboxunion** entryvec, int n, SplitVec *v, void (*bbox_adjust)(void *, void *)){
+  int i;
   /* Split entries before this to left page, after to right: */
-  OffsetNumber split_idx = (OffsetNumber) ((maxoff - FirstOffsetNumber) / 2 +
-    FirstOffsetNumber);
+  int16 split_idx = (int16) ((n) / 2 );
 
-  size_t nbytes = (maxoff + 2) * sizeof(OffsetNumber);
+  size_t nbytes = (n + 1) * sizeof(OffsetNumber);
   v->spl_left = palloc(nbytes);
   v->spl_right = palloc(nbytes);
   v->spl_nleft = v->spl_nright = 0;
@@ -514,9 +510,8 @@ bbox_gist_fallback_split(GistEntryVector *entryvec, GIST_SPLITVEC *v,
   void *leftBox = palloc0(bbox_size);
   void *rightBox = palloc0(bbox_size);
 
-  for (i = FirstOffsetNumber; i <= maxoff; i = OffsetNumberNext(i))
-  {
-    void *box = DatumGetPointer(entryvec[i]);
+  for (i = 0; i < n; i++){
+    bboxunion *box = entryvec[i];
     if (i < split_idx)
       PLACE_LEFT(box, i);
     else
@@ -528,7 +523,7 @@ bbox_gist_fallback_split(GistEntryVector *entryvec, GIST_SPLITVEC *v,
   return;
 }
 
-void bbox_cleaned(meosType bboxtype, Datum entryvec, int n, SplitVec *v){
+void bbox_cleaned(meosType bboxtype, bboxunion** entryvec, int n, SplitVec *v, void (*bbox_adjust)(void *, void *), double (*bbox_penalty)(void *, void *)){
   int i;
   ConsiderSplitContext context;
   void *box, *leftBox, *rightBox;
@@ -551,7 +546,7 @@ void bbox_cleaned(meosType bboxtype, Datum entryvec, int n, SplitVec *v){
    * Calculate the overall minimum bounding box over all the entries.
    */
   for (i = 0; i < n; i++){
-    box = DatumGetPointer(entryvec[i]);
+    box = entryvec[i];
     if (i == 0)
       memcpy(&context.boundingBox, box, bbox_size);
     else
@@ -579,23 +574,23 @@ void bbox_cleaned(meosType bboxtype, Datum entryvec, int n, SplitVec *v){
       continue;
 
     /* Project each entry as an interval on the selected axis */
-    for (i = FirstOffsetNumber; i <= maxoff; i = OffsetNumberNext(i))
+    for (i = 0; i < n; i++)
     {
       box = DatumGetPointer(entryvec[i]);
       if (bboxtype == T_TBOX)
       {
         if (dim == 0)
         {
-          intervalsLower[i - FirstOffsetNumber].lower =
+          intervalsLower[i].lower =
             DatumGetFloat8(((TBox *) box)->span.lower);
-          intervalsLower[i - FirstOffsetNumber].upper =
+          intervalsLower[i].upper =
             DatumGetFloat8(((TBox *) box)->span.upper);
         }
         else
         {
-          intervalsLower[i - FirstOffsetNumber].lower =
+          intervalsLower[i].lower =
             (double) DatumGetTimestampTz(((TBox *) box)->period.lower);
-          intervalsLower[i - FirstOffsetNumber].upper =
+          intervalsLower[i].upper =
             (double) DatumGetTimestampTz(((TBox *) box)->period.upper);
         }
       }
@@ -603,24 +598,24 @@ void bbox_cleaned(meosType bboxtype, Datum entryvec, int n, SplitVec *v){
       {
         if (dim == 0)
         {
-          intervalsLower[i - FirstOffsetNumber].lower = ((STBox *) box)->xmin;
-          intervalsLower[i - FirstOffsetNumber].upper = ((STBox *) box)->xmax;
+          intervalsLower[i].lower = ((STBox *) box)->xmin;
+          intervalsLower[i].upper = ((STBox *) box)->xmax;
         }
         else if (dim == 1)
         {
-          intervalsLower[i - FirstOffsetNumber].lower = ((STBox *) box)->ymin;
-          intervalsLower[i - FirstOffsetNumber].upper = ((STBox *) box)->ymax;
+          intervalsLower[i].lower = ((STBox *) box)->ymin;
+          intervalsLower[i].upper = ((STBox *) box)->ymax;
         }
         else if (dim == 2)
         {
-          intervalsLower[i - FirstOffsetNumber].lower = ((STBox *) box)->zmin;
-          intervalsLower[i - FirstOffsetNumber].upper = ((STBox *) box)->zmax;
+          intervalsLower[i].lower = ((STBox *) box)->zmin;
+          intervalsLower[i].upper = ((STBox *) box)->zmax;
         }
         else
         {
-          intervalsLower[i - FirstOffsetNumber].lower =
+          intervalsLower[i].lower =
             (double) DatumGetTimestampTz(((STBox *) box)->period.lower);
-          intervalsLower[i - FirstOffsetNumber].upper =
+          intervalsLower[i].upper =
             (double) DatumGetTimestampTz(((STBox *) box)->period.upper);
         }
       }
@@ -749,8 +744,8 @@ void bbox_cleaned(meosType bboxtype, Datum entryvec, int n, SplitVec *v){
    */
   if (context.first)
   {
-    bbox_gist_fallback_split(entryvec, v, bboxtype, &tbox_adjust);
-    PG_RETURN_POINTER(v);
+    bbox_gist_fallback_split(bboxtype, entryvec, bboxtype, v, bbox_adjust);
+    return;
   }
 
   /*
@@ -781,7 +776,7 @@ void bbox_cleaned(meosType bboxtype, Datum entryvec, int n, SplitVec *v){
    * Distribute entries which can be distributed unambiguously, and collect
    * common entries.
    */
-  for (i = FirstOffsetNumber; i < n; i++){
+  for (i = 0; i < n; i++){
     double lower, upper;
 
     /*
@@ -919,51 +914,50 @@ void bbox_cleaned(meosType bboxtype, Datum entryvec, int n, SplitVec *v){
 
 static SplitVec
 make_split_vec(int n, meosType bboxtype){
-  splitVec v;
+  SplitVec v;
   size_t nbytes = (n) * sizeof(OffsetNumber);
-  v->spl_left = palloc(nbytes);
-  v->spl_right = palloc(nbytes);
-  v->spl_nleft = v->spl_nright = 0;
+  v.spl_left = palloc(nbytes);
+  v.spl_right = palloc(nbytes);
+  v.spl_nleft = v.spl_nright = 0;
 
   size_t bbox_size = bbox_get_size(bboxtype);
-  v->spl_ldatum = PointerGetDatum(palloc0(bbox_size));
-  v->spl_rdatum = PointerGetDatum(palloc0(bbox_size));
+  v.spl_ldatum = PointerGetDatum(palloc0(bbox_size));
+  v.spl_rdatum = PointerGetDatum(palloc0(bbox_size));
   return v;
 }
 
 static GIST_SPLITVEC *
-make_gist_splitvec (const SplitVec * splitvec, GIST_SPLITVEC *v,int n){
-  splitVec v;
+make_gist_splitvec (const SplitVec * splitvec, GIST_SPLITVEC *v, int n){
   /** We add 1 since this is 1-based index */
   size_t nbytes = (n+1) * sizeof(OffsetNumber);
   v->spl_left = palloc(nbytes);
   v->spl_right = palloc(nbytes);
-  for (int16 i = 0; i <= spl_nleft; i++){
+  for (int16 i = 0; i <= splitvec->spl_nleft; i++){
     v->spl_left[i+1] = splitvec->spl_left[i] + 1;
   }
 
-  for (int16 i = 0; i <= spl_nleft; i++){
+  for (int16 i = 0; i <= splitvec->spl_nleft; i++){
     v->spl_right[i+1] = splitvec->spl_right[i] + 1;
   }
 
   v->spl_nleft = splitvec->spl_nleft;
-  v->spl_nright = splitvec->spl_rleft;
+  v->spl_nright = splitvec->spl_nright;
 
   v->spl_ldatum = PointerGetDatum(splitvec->spl_ldatum);
   v->spl_rdatum = PointerGetDatum(splitvec->spl_rdatum);
 
-  pfree(v->spl_ldatum);
-  pfree(v->spl_rdatum);
+  pfree(DatumGetPointer(v->spl_ldatum));
+  pfree(DatumGetPointer(v->spl_rdatum));
   return v;
 }
 
 Datum
 make_array_from_gist_entry_vector(const GistEntryVector *entryvec){
-  Datum result = palloc(sizeof(Datum) * (entryvec->n -1));
-  for (int i = 0 ; i< n-1; i++){
-    result[i] = entryvec->vector[i+1].key;
+  void ** result = palloc(sizeof(Datum) * (entryvec->n -1));
+  for (int i = 0 ; i< entryvec->n-1; i++){
+    result[i] = DatumGetPointer(entryvec->vector[i+1].key);
   }
-  return result;
+  return PointerGetDatum(result);
 }
 
 /**
@@ -996,21 +990,23 @@ bbox_gist_picksplit(FunctionCallInfo fcinfo, meosType bboxtype,
 {
   GistEntryVector *entryvec = (GistEntryVector *) PG_GETARG_POINTER(0);
   GIST_SPLITVEC *v = (GIST_SPLITVEC *) PG_GETARG_POINTER(1);
-  SplitVec splitvec = make_split_vec(entryvec.n, bboxtype);
+  SplitVec splitvec = make_split_vec(entryvec->n, bboxtype);
   Datum entryarray = make_array_from_gist_entry_vector(entryvec);
   /** Since there is an offset of 1, because that is the way postgres normally
    * uses it, then you have to add 1 to the vec. You also have to substract 1
    * from the size, since it had 1 added.
   */
   bbox_cleaned(
-    bbox_type, 
-    entryarray,
-    entryvec.n-1, 
-    &splitvec
+    bboxtype, 
+    (bboxunion **) DatumGetPointer(entryarray),
+    entryvec->n - 1, 
+    &splitvec,
+    bbox_adjust,
+    bbox_penalty
   );
 
-  pfree(entryarray)
-  PG_RETURN_POINTER(make_gist_splitvec(&splitvec, &v, int n));
+  pfree(DatumGetPointer(entryarray));
+  PG_RETURN_POINTER(make_gist_splitvec(&splitvec, v, entryvec->n - 1));
 }
 
 PGDLLEXPORT Datum Tbox_gist_picksplit(PG_FUNCTION_ARGS);
