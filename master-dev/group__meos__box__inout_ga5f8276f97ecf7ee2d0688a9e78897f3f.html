@@ -22,7 +22,7 @@
  <tr id="projectrow">
   <td id="projectlogo"><img alt="Logo" src="mobilitydb-logo-icon.png"/></td>
   <td id="projectalign">
-   <div id="projectname">MobilityDB<span id="projectnumber">&#160;1.1</span>
+   <div id="projectname">MobilityDB<span id="projectnumber">&#160;1.3</span>
    </div>
   </td>
  </tr>
@@ -79,12 +79,6 @@ $(function() {
    <td valign="top">
       <div class="navtab">
         <table>
-          <tr><td class="navtab"><a class="navtab" href="group__meos__box__inout_ga6c4dd207ee69cecc59aabd7e53a54a9b.html#ga6c4dd207ee69cecc59aabd7e53a54a9b">stbox_as_hexwkb</a></td></tr>
-          <tr><td class="navtab"><a class="navtab" href="group__meos__box__inout_ga403b8fea9473da4fa903bee72263d791.html#ga403b8fea9473da4fa903bee72263d791">stbox_as_wkb</a></td></tr>
-          <tr><td class="navtab"><a class="navtab" href="group__meos__box__inout_gadb7ded669caa9172431273501dd16cf0.html#gadb7ded669caa9172431273501dd16cf0">stbox_from_hexwkb</a></td></tr>
-          <tr><td class="navtab"><a class="navtab" href="group__meos__box__inout_ga35462675567a55ea29ced4094a86673c.html#ga35462675567a55ea29ced4094a86673c">stbox_from_wkb</a></td></tr>
-          <tr><td class="navtab"><a class="navtab" href="group__meos__box__inout_ga3f1f36208ee29294b5dda627ff875fac.html#ga3f1f36208ee29294b5dda627ff875fac">stbox_in</a></td></tr>
-          <tr><td class="navtab"><a class="navtab" href="group__meos__box__inout_gae6e19a58de18984e91a7a9979188346d.html#gae6e19a58de18984e91a7a9979188346d">stbox_out</a></td></tr>
           <tr><td class="navtab"><a class="navtab" href="group__meos__box__inout_ga6833f673aefb5eebfd08edfc03ff4992.html#ga6833f673aefb5eebfd08edfc03ff4992">tbox_as_hexwkb</a></td></tr>
           <tr><td class="navtab"><a class="navtab" href="group__meos__box__inout_ga7c0868c84bea513be5517a973fb330a4.html#ga7c0868c84bea513be5517a973fb330a4">tbox_as_wkb</a></td></tr>
           <tr><td class="navtab"><a class="navtab" href="group__meos__box__inout_gac6a13d1ba6d54a2ad2940aff6c366263.html#gac6a13d1ba6d54a2ad2940aff6c366263">tbox_from_hexwkb</a></td></tr>
@@ -112,9 +106,10 @@ $(function() {
 </div><div class="memdoc">
 
 <p>Return a temporal box from its Well-Known Text (WKT) representation. </p>
-<p >Examples of input: </p><div class="fragment"><div class="line">TBOX X([1.0, 4.0)) -&gt; only value</div>
-<div class="line">TBOX XT([1.0, 4.0),[2001-01-01, 2001-01-02]) -&gt; value and time</div>
-<div class="line">TBOX T([2001-01-01, 2001-01-02]) -&gt; only time</div>
+<p >Examples of input: </p><div class="fragment"><div class="line"><a class="code hl_define" href="rtree__example_8c_a6d92e5c0cf08dbcca25d3059b7a09ab9.html#a6d92e5c0cf08dbcca25d3059b7a09ab9">TBOX</a> X([1.0, 4.0)) -&gt; only value</div>
+<div class="line"><a class="code hl_define" href="rtree__example_8c_a6d92e5c0cf08dbcca25d3059b7a09ab9.html#a6d92e5c0cf08dbcca25d3059b7a09ab9">TBOX</a> XT([1.0, 4.0),[2001-01-01, 2001-01-02]) -&gt; value and time</div>
+<div class="line"><a class="code hl_define" href="rtree__example_8c_a6d92e5c0cf08dbcca25d3059b7a09ab9.html#a6d92e5c0cf08dbcca25d3059b7a09ab9">TBOX</a> T([2001-01-01, 2001-01-02]) -&gt; only time</div>
+<div class="ttc" id="artree__example_8c_a6d92e5c0cf08dbcca25d3059b7a09ab9_html_a6d92e5c0cf08dbcca25d3059b7a09ab9"><div class="ttname"><a href="rtree__example_8c_a6d92e5c0cf08dbcca25d3059b7a09ab9.html#a6d92e5c0cf08dbcca25d3059b7a09ab9">TBOX</a></div><div class="ttdeci">#define TBOX</div><div class="ttdef"><b>Definition:</b> rtree_example.c:59</div></div>
 </div><!-- fragment --><p> where the commas are optional. </p><dl class="section return"><dt>Returns</dt><dd>On error return <code>NULL</code> </dd></dl>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
